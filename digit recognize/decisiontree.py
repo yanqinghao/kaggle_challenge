@@ -41,10 +41,10 @@ ax[0].set_yticks([])
 plt.tight_layout()
 plt.show()
 
-tree = DecisionTreeClassifier(criterion='entropy',max_depth=3, random_state=0)
+# tree = DecisionTreeClassifier(criterion='entropy',max_depth=3, random_state=0)
+# tree.fit(X_train, y_train)
+tree = RandomForestClassifier(criterion='entropy',n_estimators=500,random_state=1,n_jobs=-1)
 tree.fit(X_train, y_train)
-# forest = RandomForestClassifier(criterion='entropy',n_estimators=10,random_state=1,n_jobs=2)
-# forest.fit(X_train, y_train)
 
 y_train_pred = tree.predict(X_train)
 acc = np.sum(y_train == y_train_pred, axis=0) / X_train.shape[0]

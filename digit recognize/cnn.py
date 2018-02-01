@@ -24,6 +24,10 @@ def load_data():
     return images, labels
 
 X, y = load_data()
+
+g = sns.countplot(x='label',data=y)
+plt.show()
+
 X, y = X.values.reshape(-1,28,28,1)/255.0, y.values.T.reshape(y.values.shape[0],)
 y = to_categorical(y, num_classes = 10)
 print('Rows: %d, columns: %d' % (X.shape[0], X.shape[1]))
@@ -32,10 +36,7 @@ random_seed = 2
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=random_seed, shuffle=True)
 
 img_prd = pd.read_csv('./Digit Recognizer/test.csv')
-X_prd = img_prd.values/255.0
-
-g = sns.countplot(y)
-plt.show()
+X_prd = img_prd.values.reshape(-1,28,28,1)/255.0
 
 model = Sequential()
 model.add(Conv2D(filters = 32, kernel_size = (5,5),padding = 'Same', activation ='relu', input_shape = (28,28,1)))
@@ -43,12 +44,10 @@ model.add(Conv2D(filters = 32, kernel_size = (5,5),padding = 'Same', activation 
 model.add(MaxPool2D(pool_size=(2,2)))
 model.add(Dropout(0.25))
 
-
 model.add(Conv2D(filters = 64, kernel_size = (3,3),padding = 'Same', activation ='relu'))
 model.add(Conv2D(filters = 64, kernel_size = (3,3),padding = 'Same', activation ='relu'))
 model.add(MaxPool2D(pool_size=(2,2), strides=(2,2)))
 model.add(Dropout(0.25))
-
 
 model.add(Flatten())
 model.add(Dense(256, activation = "relu"))
@@ -58,7 +57,7 @@ model.add(Dense(10, activation = "softmax"))
 optimizer = RMSprop(lr=0.001, rho=0.9, epsilon=1e-08, decay=0.0)
 model.compile(optimizer = optimizer , loss = "categorical_crossentropy", metrics=["accuracy"])
 learning_rate_reduction = ReduceLROnPlateau(monitor='val_acc', patience=3, verbose=1, factor=0.5, min_lr=0.00001)
-epochs = 1 # Turn epochs to 30 to get 0.9967 accuracy
+epochs = 30 # Turn epochs to 30 to get 0.9967 accuracy
 batch_size = 86
 # Without data augmentation i obtained an accuracy of 0.98114
 #history = model.fit(X_train, Y_train, batch_size = batch_size, epochs = epochs, validation_data = (X_val, Y_val), verbose = 2)
@@ -90,10 +89,7 @@ ax[1].plot(history.history['val_acc'], color='r',label="Validation accuracy")
 legend = ax[1].legend(loc='best', shadow=True)
 plt.show()
 
-def plot_confusion_matrix(cm, classes,
-                          normalize=False,
-                          title='Confusion matrix',
-                          cmap=plt.cm.Blues):
+def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
     """
     This function prints and plots the confusion matrix.
     Normalization can be applied by setting `normalize=True`.
@@ -131,10 +127,8 @@ plot_confusion_matrix(confusion_mtx, classes = range(10))
 plt.show()
 
 # Display some error results
-
 # Errors are difference between predicted labels and true labels
 errors = (Y_pred_classes - Y_true != 0)
-
 Y_pred_classes_errors = Y_pred_classes[errors]
 Y_pred_errors = Y_pred[errors]
 Y_true_errors = Y_true[errors]
@@ -155,19 +149,14 @@ def display_errors(errors_index,img_errors,pred_errors, obs_errors):
 
 # Probabilities of the wrong predicted numbers
 Y_pred_errors_prob = np.max(Y_pred_errors,axis = 1)
-
-# Predicted probabilities of the true values in the error set
+# Predicted probablities of the true values in the error set
 true_prob_errors = np.diagonal(np.take(Y_pred_errors, Y_true_errors, axis=1))
-
 # Difference between the probability of the predicted label and the true label
 delta_pred_true_errors = Y_pred_errors_prob - true_prob_errors
-
 # Sorted list of the delta prob errors
 sorted_dela_errors = np.argsort(delta_pred_true_errors)
-
 # Top 6 errors
 most_important_errors = sorted_dela_errors[-6:]
-
 # Show the top 6 errors
 display_errors(most_important_errors, X_val_errors, Y_pred_classes_errors, Y_true_errors)
 

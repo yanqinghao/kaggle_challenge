@@ -2,10 +2,25 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
 raw_train = pd.read_csv('./house_prices_data/train.csv')
 raw_test = pd.read_csv('./house_prices_data/test.csv')
-
+train = raw_train.drop('Id',axis=1)
+train = train.fillna({'LotFrontage': np.inf, 'Alley': 'None', 'MasVnrType': train['MasVnrType'].value_counts().index.values[0],
+                      'MasVnrArea': train['MasVnrArea'].mean(),'BsmtQual': 'None', 'BsmtCond': 'None',
+                      'BsmtExposure': 'None', 'BsmtFinType1': 'None', 'Electrical': train['Electrical'].value_counts().index.values[0],
+                      'FireplaceQu': 'None', 'GarageType': 'None', 'GarageYrBlt': 0, 'GarageFinish': 'None',
+                      'GarageQual': 'None', 'GarageCond': 'None', 'PoolQC': 'None', 'Fence': 'None'})
+le = LabelEncoder()
+le.fit(train.loc[:,['MSSubClass','MSZoning','Street','Alley','LotShape','LandContour','Utilities'
+                    , 'LotConfig', 'LandSlope', 'Neighborhood', 'Condition1', 'Condition2', 'BldgType',
+                    'HouseStyle', 'RoofStyle', 'RoofMatl', 'Exterior1st', 'Exterior2nd', 'MasVnrType',
+                    'ExterQual', 'ExterCond', 'Foundation', 'BsmtQual', 'BsmtCond', 'BsmtExposure',
+                    'BsmtFinType1', 'BsmtFinType2', 'Heating', 'HeatingQC', 'CentralAir', 'Electrical',
+                    'KitchenQual','Functional', 'FireplaceQu', 'GarageType', 'GarageFinish', 'GarageArea',
+                    'GarageQual', 'GarageCond', 'PavedDrive', 'PoolQC', 'Fence', 'MiscFeature', 'SaleType',
+                    'SaleCondition']].values)
 print(raw_train.shape)
 
 columns = raw_train.columns.values

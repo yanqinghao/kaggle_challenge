@@ -10,12 +10,33 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import mean_squared_error,make_scorer
+from scipy.stats import skew
+from sklearn.svm import SVR
+from sklearn.ensemble import AdaBoostRegressor,BaggingRegressor,GradientBoostingRegressor
 
 raw_train = pd.read_csv('./house_prices_data/train.csv')
 raw_test = pd.read_csv('./house_prices_data/test.csv')
 train = raw_train.drop('Id',axis=1)
 Id = raw_test.ix[:,0]
 test = raw_test.drop('Id',axis=1)
+
+train['YearBuilt'] = train['YrSold']-train['YearBuilt']
+train['YearRemodAdd'] = train['YrSold']-train['YearRemodAdd']
+train['GarageYrBlt'] = train['YrSold']-train['GarageYrBlt']
+test['YearBuilt'] = test['YrSold']-test['YearBuilt']
+test['YearRemodAdd'] = test['YrSold']-test['YearRemodAdd']
+test['GarageYrBlt'] = test['YrSold']-test['GarageYrBlt']
+
+train['SalePrice'] = np.log1p(train['SalePrice'])
+
+alldata = pd.concat((raw_train.iloc[:,1:-1], raw_test.iloc[:,1:]))
+numeric_feats = alldata.dtypes[alldata.dtypes != "object"].index
+skewed_feats = train[numeric_feats].apply(lambda x: skew(x.dropna())) #compute skewness
+skewed_feats = skewed_feats[skewed_feats > 0.75]
+skewed_feats = skewed_feats.index
+
+train[skewed_feats] = np.log1p(train[skewed_feats])
+test[skewed_feats] = np.log1p(test[skewed_feats])
 
 neighbor = train.groupby('Neighborhood')['LotFrontage'].median()
 train['LotFrontage'] = list(map(lambda x,y: neighbor[y] if np.isnan(x) else x,train['LotFrontage'].values,train['Neighborhood'].values))
@@ -79,13 +100,6 @@ for i in deflist:
         if len(list(set(j.keys()).intersection(set(train[i].unique())))) > 2:
             train[i] = train[i].map(j)
             test[i] = test[i].map(j)
-
-train['YearBuilt'] = train['YrSold']-train['YearBuilt']
-train['YearRemodAdd'] = train['YrSold']-train['YearRemodAdd']
-train['GarageYrBlt'] = train['YrSold']-train['GarageYrBlt']
-test['YearBuilt'] = test['YrSold']-test['YearBuilt']
-test['YearRemodAdd'] = test['YrSold']-test['YearRemodAdd']
-test['GarageYrBlt'] = test['YrSold']-test['GarageYrBlt']
 
 forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
 forest.fit(train.ix[:,:-1], train.ix[:,-1])
@@ -221,6 +235,14 @@ for i in select_dec:
     list_score.append(gs_ridge.best_score_)
     list_para.append(gs_ridge.best_params_)
 
+    adb_range = range(100, 1100, 100)
+    parameters_ridge = [{'n_estimators': adb_range, 'base_estimator__alpha': ridge_range}]
+    adbrg = AdaBoostRegressor(Ridge(), random_state=0)
+    gs_ridge = GridSearchCV(estimator=adbrg, param_grid=parameters_ridge, scoring='r2', cv=3, n_jobs=-1)
+    gs_ridge.fit(x, train_fil.ix[:, -1])
+    list_score.append(gs_ridge.best_score_)
+    list_para.append(gs_ridge.best_params_)
+
     # ridge = Ridge(alpha=1.0).fit(train_fil.ix[:,:-1], train_fil.ix[:,-1])
     # print(ridge.score(train_fil.ix[:,:-1], train_fil.ix[:,-1]))
     #
@@ -253,6 +275,14 @@ for i in select_dec:
     gs_elastic.fit(x, train_fil.ix[:, -1])
     list_score.append(gs_elastic.best_score_)
     list_para.append(gs_elastic.best_params_)
+
+    # svr_range_1 = [0.01, 0.1, 1, 10, 100, 1000]
+    # # svr_range_2 = [0.01, 0.1, 1, 10, 100, 1000]
+    # parameters_svr = [{'C': svr_range_1}]
+    # gs_svr = GridSearchCV(estimator=SVR(kernel='linear'), param_grid=parameters_svr, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
+    # gs_svr.fit(x, train_fil.ix[:, -1])
+    # list_score.append(gs_svr.best_score_)
+    # list_para.append(gs_svr.best_params_)
 
     # elastic = ElasticNet(alpha=1.0, l1_ratio=0.5).fit(train_fil.ix[:,:-1], train_fil.ix[:,-1])
     # print(elastic.score(train_fil.ix[:,:-1], train_fil.ix[:,-1]))

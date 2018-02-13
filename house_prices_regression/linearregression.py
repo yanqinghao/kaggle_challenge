@@ -13,6 +13,7 @@ from sklearn.metrics import mean_squared_error,make_scorer
 from scipy.stats import skew
 from sklearn.svm import SVR
 from sklearn.ensemble import AdaBoostRegressor,BaggingRegressor,GradientBoostingRegressor
+import xgboost as xgb
 
 raw_train = pd.read_csv('./house_prices_data/train.csv')
 raw_test = pd.read_csv('./house_prices_data/test.csv')
@@ -235,9 +236,9 @@ for i in select_dec:
     list_score.append(gs_ridge.best_score_)
     list_para.append(gs_ridge.best_params_)
 
-    adb_range = range(100, 1100, 100)
+    adb_range = range(6, 15, 1)
     parameters_ridge = [{'n_estimators': adb_range, 'base_estimator__alpha': ridge_range}]
-    adbrg = AdaBoostRegressor(Ridge(), random_state=0)
+    adbrg = BaggingRegressor(Ridge(), random_state=0)
     gs_ridge = GridSearchCV(estimator=adbrg, param_grid=parameters_ridge, scoring='r2', cv=3, n_jobs=-1)
     gs_ridge.fit(x, train_fil.ix[:, -1])
     list_score.append(gs_ridge.best_score_)

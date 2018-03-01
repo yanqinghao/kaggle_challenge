@@ -13,11 +13,13 @@ from sklearn.metrics import mean_squared_error,make_scorer
 from scipy.stats import skew
 from sklearn.ensemble import AdaBoostRegressor,BaggingRegressor,GradientBoostingRegressor
 import xgboost as xgb
+import StackModels
 
 raw_train = pd.read_csv('./house_prices_data/train.csv')
 raw_test = pd.read_csv('./house_prices_data/test.csv')
 
 train = raw_train.drop('Id',axis=1)
+train = train.drop(train[(train['GrLivArea']>4000) & (train['SalePrice']<300000)].index)
 Id = raw_test.ix[:,0]
 test = raw_test.drop('Id',axis=1)
 
@@ -92,57 +94,43 @@ for i in deflist:
             train[i] = train[i].map(j)
             test[i] = test[i].map(j)
 
-forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
-forest.fit(train.ix[:,:-1], train.ix[:,-1])
-print(forest.score(train.ix[:,:-1], train.ix[:,-1]))
+# forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
+# forest.fit(train.ix[:,:-1], train.ix[:,-1])
+#
+# features = np.row_stack((train.columns[:-1], forest.feature_importances_))
+# imp_df = pd.DataFrame(columns=['Names', 'importances'], data=features.T)
+# sorted_df = imp_df.sort_values('importances',ascending=False)
 
-features = np.row_stack((train.columns[:-1], forest.feature_importances_))
-imp_df = pd.DataFrame(columns=['Names', 'importances'], data=features.T)
-sorted_df = imp_df.sort_values('importances',ascending=False)
-
-score_df = pd.DataFrame()
-namelst = list(sorted_df['Names'].values[0:60])
-namelst.append('SalePrice')
-train_fil = train.ix[:, namelst]
-test_fil = test.ix[:, namelst[:-1]]
+# score_df = pd.DataFrame()
+# namelst = list(sorted_df['Names'].values[0:79])
+# namelst.append('SalePrice')
+train_fil = train
+test_fil = test
 
 indexoh = ['MSSubClass','MSZoning','Street','Alley','LotShape','LandContour','Utilities',
                'LotConfig','LandSlope','Neighborhood','Condition1','Condition2','BldgType',
                'HouseStyle','RoofStyle','RoofMatl','Exterior1st','Exterior2nd','MasVnrType',
                'Foundation','Heating','Electrical','Functional','GarageType','GarageFinish',
                'MiscFeature','SaleType','SaleCondition']
-indexoh_fil = list(set(namelst).intersection(set(indexoh)))
+indexoh_fil = indexoh
 
 indexstd = ['LotFrontage','LotArea','MasVnrArea','BsmtFinSF1','BsmtFinSF2','BsmtUnfSF','TotalBsmtSF',
              '1stFlrSF','2ndFlrSF','LowQualFinSF','GrLivArea','GarageArea','WoodDeckSF','OpenPorchSF',
              'EnclosedPorch','3SsnPorch','ScreenPorch','PoolArea','MiscVal','YearBuilt','YearRemodAdd',
              'BsmtFullBath','BsmtHalfBath','FullBath','HalfBath','BedroomAbvGr','KitchenAbvGr',
              'TotRmsAbvGrd','GarageYrBlt','GarageCars','YrSold']
-indexstd_fil = list(set(namelst).intersection(set(indexstd)))
+indexstd_fil = indexstd
 
 indexmm = ['OverallQual','OverallCond','ExterQual','ExterCond',
              'BsmtQual','BsmtCond','BsmtExposure','BsmtFinType1','BsmtFinType2',
              'HeatingQC','CentralAir','KitchenQual','Fireplaces','FireplaceQu',
              'GarageQual','GarageCond','PavedDrive','PoolQC','Fence','MoSold',]
-indexmm_fil = list(set(namelst).intersection(set(indexmm)))
+indexmm_fil = indexmm
 
 if len(indexoh_fil)>0:
     ohscaler = OneHotEncoder()
     onehottrain = ohscaler.fit_transform(train_fil.loc[:, indexoh_fil].values.reshape(-1, len(indexoh_fil)))
     onehottest = ohscaler.transform(test_fil.loc[:, indexoh_fil].values.reshape(-1, len(indexoh_fil)))
-
-if len(indexstd_fil) > 0:
-    stdscaler = StandardScaler()
-    train_fil.loc[:,indexstd_fil] = stdscaler.fit_transform(train_fil.loc[:,indexstd_fil].values.reshape(-1,len(indexstd_fil)))
-    test_fil.loc[:,indexstd_fil] = stdscaler.transform(test_fil.loc[:,indexstd_fil].values.reshape(-1,len(indexstd_fil)))
-
-if len(indexmm_fil) > 0:
-    mmscaler = MinMaxScaler()
-    train_fil.loc[:,indexmm_fil] = mmscaler.fit_transform(train_fil.loc[:,indexmm_fil].values.reshape(-1,len(indexmm_fil)))
-    test_fil.loc[:,indexmm_fil] = mmscaler.transform(test_fil.loc[:,indexmm_fil].values.reshape(-1,len(indexmm_fil)))
-
-stdscalerout = StandardScaler()
-train_fil.loc[:,['SalePrice']] = stdscalerout.fit_transform(train_fil.loc[:,['SalePrice']].values.reshape(-1,1))
 
 index_all = indexstd_fil+indexmm_fil
 if len(indexoh_fil)>0:
@@ -152,57 +140,90 @@ else:
     x = train.ix[:, index_all]
     x_test = test.ix[:, index_all]
 
-elastic = ElasticNet(alpha=0.01,l1_ratio=0.01)
+def rmsle_cv(model, n_folds):
+    kf = KFold(n_folds, shuffle=True, random_state=42).get_n_splits(x)
+    rmse= np.sqrt(-cross_val_score(model, x, train_fil.ix[:,-1].values, scoring="neg_mean_squared_error", cv = kf))
+    return(rmse)
+
+# forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
+# forest.fit(x, train.ix[:,-1])
+# print('RandomForestRegressor:',(rmsle_cv(forest,5)).mean(),' ',(rmsle_cv(forest,5)).std())
+
+elastic = ElasticNet(alpha=0.003,l1_ratio=0.07)
 elastic.fit(x, train_fil.ix[:, -1])
-print(elastic.score(x, train_fil.ix[:,-1]))
+print('ElasticNet:',(rmsle_cv(elastic,5)).mean(),' ',(rmsle_cv(elastic,5)).std())
 
 y = elastic.predict(x_test)
-submit = stdscalerout.inverse_transform(y)
-submit = np.expm1(submit)
+submit = np.expm1(y)
 results = pd.Series(submit,name="SalePrice")
 submission = pd.concat([Id,results],axis = 1)
 submission.to_csv("elastic.csv",index=False)
 
-ridge = Ridge(alpha=10)
+ridge = Ridge(alpha=7)
 ridge.fit(x, train_fil.ix[:, -1])
-print(ridge.score(x, train_fil.ix[:,-1]))
+print('Ridge:',(rmsle_cv(ridge,5)).mean(),' ',(rmsle_cv(ridge,5)).std())
 
 y = ridge.predict(x_test)
-submit = stdscalerout.inverse_transform(y)
-submit = np.expm1(submit)
+submit = np.expm1(y)
 results = pd.Series(submit,name="SalePrice")
 submission = pd.concat([Id,results],axis = 1)
 submission.to_csv("ridge.csv",index=False)
 
-bagridge = BaggingRegressor(Ridge(alpha=10),n_estimators=8, random_state=0)
+lasso = Lasso(alpha=0.0004)
+lasso.fit(x, train_fil.ix[:, -1])
+print('Lasso:',(rmsle_cv(lasso,5)).mean(),' ',(rmsle_cv(lasso,5)).std())
+
+y = lasso.predict(x_test)
+submit = np.expm1(y)
+results = pd.Series(submit,name="SalePrice")
+submission = pd.concat([Id,results],axis = 1)
+submission.to_csv("lasso.csv",index=False)
+
+bagridge = BaggingRegressor(Ridge(alpha=4),n_estimators=6, random_state=0)
 bagridge.fit(x, train_fil.ix[:, -1])
-print(bagridge.score(x, train_fil.ix[:,-1]))
+print('BaggingRegressor:',(rmsle_cv(bagridge,5)).mean(),' ',(rmsle_cv(bagridge,5)).std())
 
 y = bagridge.predict(x_test)
-submit = stdscalerout.inverse_transform(y)
-submit = np.expm1(submit)
+submit = np.expm1(y)
 results = pd.Series(submit,name="SalePrice")
 submission = pd.concat([Id,results],axis = 1)
 submission.to_csv("bagridge.csv",index=False)
 
-xgbmdl = xgb.XGBRegressor(n_estimators=700, max_depth=2, learning_rate=0.1, silent=1)
+xgbmdl = xgb.XGBRegressor(n_estimators=600, max_depth=2, learning_rate=0.1, silent=1, gamma=0.0008)
 xgbmdl.fit(x, train_fil.ix[:, -1])
-print(xgbmdl.score(x, train_fil.ix[:,-1]))
+print('XGBRegressor:',(rmsle_cv(xgbmdl,5)).mean(),' ',(rmsle_cv(xgbmdl,5)).std())
 
 y = xgbmdl.predict(x_test)
-submit = stdscalerout.inverse_transform(y)
-submit = np.expm1(submit)
+submit = np.expm1(y)
 results = pd.Series(submit,name="SalePrice")
 submission = pd.concat([Id,results],axis = 1)
 submission.to_csv("xgb.csv",index=False)
 
-gbr = GradientBoostingRegressor(n_estimators=700, max_depth=2, learning_rate=0.1, loss='huber')
+gbr = GradientBoostingRegressor(n_estimators=700, max_depth=2, learning_rate=0.1, loss='huber', alpha=0.6)
 gbr.fit(x, train_fil.ix[:, -1])
-print(gbr.score(x, train_fil.ix[:,-1]))
+print('GradientBoostingRegressor:',(rmsle_cv(gbr,5)).mean(),' ',(rmsle_cv(gbr,5)).std())
 
 y = gbr.predict(x_test)
-submit = stdscalerout.inverse_transform(y)
-submit = np.expm1(submit)
+submit = np.expm1(y)
 results = pd.Series(submit,name="SalePrice")
 submission = pd.concat([Id,results],axis = 1)
 submission.to_csv("gbr.csv",index=False)
+
+averaged_models = StackModels.AveragingModels(models = (elastic, ridge, bagridge, xgbmdl, gbr))
+averaged_models.fit(x, train_fil.ix[:, -1])
+print('AveragingModels:',(rmsle_cv(averaged_models,5)).mean(),' ',(rmsle_cv(averaged_models,5)).std())
+y = averaged_models.predict(x_test)
+submit = np.expm1(y)
+results = pd.Series(submit,name="SalePrice")
+submission = pd.concat([Id,results],axis = 1)
+submission.to_csv("averaged_models.csv",index=False)
+
+stacked_averaged_models = StackModels.StackingAveragedModels(base_models = (gbr, bagridge, ridge, xgbmdl, elastic),
+                                                 meta_model = ridge)
+stacked_averaged_models.fit(x, train_fil.ix[:, -1].values)
+print('StackingAveragedModels:',(rmsle_cv(stacked_averaged_models,5)).mean(),' ',(rmsle_cv(stacked_averaged_models,5)).std())
+y = stacked_averaged_models.predict(x_test)
+submit = np.expm1(y)
+results = pd.Series(submit,name="SalePrice")
+submission = pd.concat([Id,results],axis = 1)
+submission.to_csv("stacked_averaged_models.csv",index=False)

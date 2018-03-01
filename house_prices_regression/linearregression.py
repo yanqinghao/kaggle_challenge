@@ -277,6 +277,25 @@ for i in select_dec:
     list_score.append(gs_elastic.best_score_)
     list_para.append(gs_elastic.best_params_)
 
+    xgb_range_n = [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
+    xgb_range_d = [2, 3]
+    # xgb_range_l = [0.01, 0.05, 0.1, 0.5, 1, 10]
+    # parameters_xgb = [{'n_estimators': xgb_range_n, 'max_depth': xgb_range_d, 'gamma': xgb_range_l, 'reg_alpha': xgb_range_l, 'reg_lambda': xgb_range_l}]
+    parameters_xgb = [{'n_estimators': xgb_range_n, 'max_depth': xgb_range_d}]
+    gs_xgb = GridSearchCV(estimator=xgb.XGBRegressor(learning_rate=0.1, silent=1), param_grid=parameters_xgb, scoring='r2', cv=3, n_jobs=-1)
+    gs_xgb.fit(x, train_fil.ix[:, -1])
+    list_score.append(gs_xgb.best_score_)
+    list_para.append(gs_xgb.best_params_)
+
+    gbr_range_n = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
+    gbr_range_d = [2, 3]
+    parameters_gbr = [{'n_estimators': gbr_range_n, 'max_depth': gbr_range_d}]
+    gs_gbr = GridSearchCV(estimator=GradientBoostingRegressor(learning_rate=0.1, loss='huber'), param_grid=parameters_gbr,
+                          scoring='r2', cv=3, n_jobs=-1)
+    gs_gbr.fit(x, train_fil.ix[:, -1])
+    list_score.append(gs_gbr.best_score_)
+    list_para.append(gs_gbr.best_params_)
+
     # svr_range_1 = [0.01, 0.1, 1, 10, 100, 1000]
     # # svr_range_2 = [0.01, 0.1, 1, 10, 100, 1000]
     # parameters_svr = [{'C': svr_range_1}]

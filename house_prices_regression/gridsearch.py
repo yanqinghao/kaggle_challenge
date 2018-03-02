@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.preprocessing import LabelEncoder,MinMaxScaler,StandardScaler,OneHotEncoder
+from sklearn.preprocessing import LabelEncoder,MinMaxScaler,StandardScaler,OneHotEncoder,RobustScaler
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression,Ridge,Lasso,ElasticNet
 from sklearn.model_selection import train_test_split,cross_val_score
@@ -12,6 +12,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import mean_squared_error,make_scorer
 from scipy.stats import skew
 from sklearn.svm import SVR
+from sklearn.kernel_ridge import KernelRidge
 from sklearn.ensemble import AdaBoostRegressor,BaggingRegressor,GradientBoostingRegressor
 import xgboost as xgb
 
@@ -29,9 +30,18 @@ test['YearBuilt'] = test['YrSold']-test['YearBuilt']
 test['YearRemodAdd'] = test['YrSold']-test['YearRemodAdd']
 test['GarageYrBlt'] = test['YrSold']-test['GarageYrBlt']
 
+train["TotalHouse"] = train["TotalBsmtSF"] + train["1stFlrSF"] + train["2ndFlrSF"]
+test["TotalHouse"] = test["TotalBsmtSF"] + test["1stFlrSF"] + test["2ndFlrSF"]
+train["TotalArea"] = train["TotalBsmtSF"] + train["1stFlrSF"] + train["2ndFlrSF"] + train["GarageArea"]
+test["TotalArea"] = test["TotalBsmtSF"] + test["1stFlrSF"] + test["2ndFlrSF"] + test["GarageArea"]
+
 train['SalePrice'] = np.log1p(train['SalePrice'])
 
-alldata = pd.concat((raw_train.iloc[:,1:-1], raw_test.iloc[:,1:]))
+namecol = list(train.columns[:-3])+list(train.columns[-2:])
+namecol.append(train.columns[-3])
+train = train[namecol]
+
+alldata = pd.concat((train.iloc[:,1:-1], test.iloc[:,1:]))
 numeric_feats = alldata.dtypes[alldata.dtypes != "object"].index
 skewed_feats = train[numeric_feats].apply(lambda x: skew(x.dropna())) #compute skewness
 skewed_feats = skewed_feats[skewed_feats > 0.75]
@@ -73,6 +83,7 @@ test = test.fillna({'Alley': 'None', 'MSZoning': mostfrq[0], 'Utilities': mostfr
 #                     'KitchenQual','Functional', 'FireplaceQu', 'GarageType', 'GarageFinish',
 #                     'GarageQual', 'GarageCond', 'PavedDrive', 'PoolQC', 'Fence', 'MiscFeature', 'SaleType',
 #                     'SaleCondition']
+
 
 labellist = ['MSSubClass','MSZoning','Street','Alley','LotShape','LandContour','Utilities'
                     , 'LotConfig', 'LandSlope', 'Neighborhood', 'Condition1', 'Condition2', 'BldgType',
@@ -117,13 +128,13 @@ indexstd = ['LotFrontage','LotArea','MasVnrArea','BsmtFinSF1','BsmtFinSF2','Bsmt
              '1stFlrSF','2ndFlrSF','LowQualFinSF','GrLivArea','GarageArea','WoodDeckSF','OpenPorchSF',
              'EnclosedPorch','3SsnPorch','ScreenPorch','PoolArea','MiscVal','YearBuilt','YearRemodAdd',
              'BsmtFullBath','BsmtHalfBath','FullBath','HalfBath','BedroomAbvGr','KitchenAbvGr',
-             'TotRmsAbvGrd','GarageYrBlt','GarageCars','YrSold']
+             'TotRmsAbvGrd','GarageYrBlt','GarageCars','YrSold', 'TotalHouse', 'TotalArea']#insert columns , 'TotalHouse', 'TotalArea'
 indexstd_fil = indexstd
 
 indexmm = ['OverallQual','OverallCond','ExterQual','ExterCond',
              'BsmtQual','BsmtCond','BsmtExposure','BsmtFinType1','BsmtFinType2',
              'HeatingQC','CentralAir','KitchenQual','Fireplaces','FireplaceQu',
-             'GarageQual','GarageCond','PavedDrive','PoolQC','Fence','MoSold',]
+             'GarageQual','GarageCond','PavedDrive','PoolQC','Fence','MoSold']
 indexmm_fil = indexmm
 
 if len(indexoh_fil)>0:
@@ -137,10 +148,13 @@ if len(indexoh_fil)>0:
 else:
     x = train.ix[:, index_all]
 
-forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
-forest.fit(x, train.ix[:,-1])
+scaler = RobustScaler()
+x_scaled = scaler.fit_transform(x)
 
-features = np.row_stack((range(x.shape[1]), forest.feature_importances_))
+forest = RandomForestRegressor(n_estimators=400, criterion='mse', random_state=1, n_jobs=-1)
+forest.fit(x_scaled, train.ix[:,-1])
+
+features = np.row_stack((range(x_scaled.shape[1]), forest.feature_importances_))
 imp_df = pd.DataFrame(columns=['Names', 'importances'], data=features.T)
 sorted_df = imp_df.sort_values('importances',ascending=False)
 
@@ -148,14 +162,14 @@ sorted_df = imp_df.sort_values('importances',ascending=False)
 # corr = train.corr()
 # sale_corr = corr.ix[:,-1].to_frame('SalePrice')
 # select_dec = [int(x.shape[1]*0.5), int(x.shape[1]*0.6), int(x.shape[1]*0.57), int(x.shape[1]*0.8), int(x.shape[1]*0.9),x.shape[1]]
-select_dec = [int(x.shape[1])]
+select_dec = [int(x_scaled.shape[1])]
 score_df = pd.DataFrame()
 for i in select_dec:
     list_score = []
     list_para = []
 
     namelst = np.array(list(sorted_df['Names'].values[0:i])).astype('int')
-    x_train = x[:, namelst]
+    x_train = x_scaled[:, namelst]
     # namelst.append('SalePrice')
     # train_fil = train.ix[:, namelst]
     # test_fil = test.ix[:, namelst[:-1]]
@@ -166,7 +180,7 @@ for i in select_dec:
 
     # tree_range = range(1, 10, 1)
     # parameters_tree = [{'max_depth': tree_range}]
-    # gs_tree = GridSearchCV(estimator=DecisionTreeRegressor(), param_grid=parameters_tree, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
+    # gs_tree = GridSearchCV(estimator=DecisionTreeRegressor(), param_grid=parameters_tree, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
     # gs_tree.fit(x_train, y)
     # list_score.append(np.sqrt(-gs_tree.best_score_))
     # list_para.append(gs_tree.best_params_)
@@ -175,7 +189,7 @@ for i in select_dec:
     # forest_range = range(400,1100,100)
     # forest_range1 = range(2, 7, 1)
     # parameters_forest = [{'n_estimators': [600], 'max_depth': forest_range1}]
-    # gs_forest = GridSearchCV(estimator=RandomForestRegressor(criterion='mse', random_state=1), param_grid=parameters_forest, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
+    # gs_forest = GridSearchCV(estimator=RandomForestRegressor(criterion='mse', random_state=1), param_grid=parameters_forest, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
     # gs_forest.fit(x_train, y)
     # list_score.append(np.sqrt(-gs_forest.best_score_))
     # list_para.append(gs_forest.best_params_)
@@ -188,59 +202,78 @@ for i in select_dec:
     # gs_lr.fit(train_fil.ix[:, :-1], train_fil.ix[:, -1])
     # print(gs_lr.best_score_)
     # print(gs_lr.best_params_)
-    # scores = cross_val_score(estimator=LinearRegression(),X=x_train, y=y,scoring='neg_mean_squared_error',cv=3)
+    # scores = cross_val_score(estimator=LinearRegression(),X=x_train, y=y,scoring='neg_mean_squared_error',cv=5)
     # list_score.append(np.sqrt(-scores.mean()))
     # list_para.append('None')
 
-    ridge_range = [3, 4, 5, 6, 7, 8, 9, 10, 11]
-    parameters_ridge = [{'alpha': ridge_range}]
-    gs_ridge = GridSearchCV(estimator=Ridge(), param_grid=parameters_ridge, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_ridge.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_ridge.best_score_))
-    list_para.append(gs_ridge.best_params_)
+    # svr_range_c = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    # svr_range_g = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007, 0.0008, 0.0009, 0.001,0.0011, 0.0012, 0.0013, 0.002]
+    # parameters_svr = [{'C': svr_range_c, 'gamma': svr_range_g}]
+    # gs_svr = GridSearchCV(estimator=SVR(kernel='rbf'), param_grid=parameters_svr, scoring='neg_mean_squared_error', cv=5,
+    #                         n_jobs=-1)
+    # gs_svr.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_svr.best_score_))
+    # list_para.append(gs_svr.best_params_)
 
-    adb_range = range(2, 15, 1)
-    parameters_ridge = [{'n_estimators': adb_range, 'base_estimator__alpha': ridge_range}]
-    adbrg = BaggingRegressor(Ridge(), random_state=0)
-    gs_ridge = GridSearchCV(estimator=adbrg, param_grid=parameters_ridge, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_ridge.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_ridge.best_score_))
-    list_para.append(gs_ridge.best_params_)
-
-    lasso_range = [0.0001, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007, 0.0008]
-    parameters_lasso = [{'alpha': lasso_range}]
-    gs_lasso = GridSearchCV(estimator=Lasso(), param_grid=parameters_lasso, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_lasso.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_lasso.best_score_))
-    list_para.append(gs_lasso.best_params_)
-
-    elastic_range_1 = [0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.01, 0.02, 0.03, 0.035, 0.04, 0.045, 0.05, 0.06, 0.07]
-    elastic_range_2 = [0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.01, 0.02, 0.03, 0.035, 0.04, 0.045, 0.05, 0.06, 0.07]
-    parameters_elastic = [{'alpha': elastic_range_1, 'l1_ratio':elastic_range_2}]
-    gs_elastic = GridSearchCV(estimator=ElasticNet(), param_grid=parameters_elastic, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_elastic.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_elastic.best_score_))
-    list_para.append(gs_elastic.best_params_)
-
-    xgb_range_n = [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
-    xgb_range_d = [2, 3]
-    xgb_range_l = [0.0001, 0.0005, 0.0006, 0.0007, 0.0008, 0.0009, 0.001, 0.005]
-    # parameters_xgb = [{'n_estimators': xgb_range_n, 'max_depth': xgb_range_d, 'gamma': xgb_range_l, 'reg_alpha': xgb_range_l, 'reg_lambda': xgb_range_l}]
-    parameters_xgb = [{'n_estimators': [600], 'max_depth': [2], 'gamma': xgb_range_l}]
-    gs_xgb = GridSearchCV(estimator=xgb.XGBRegressor(learning_rate=0.1, silent=1), param_grid=parameters_xgb, scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_xgb.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_xgb.best_score_))
-    list_para.append(gs_xgb.best_params_)
-
-    gbr_range_n = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
-    gbr_range_d = [2, 3]
-    gbr_range_a = [0.5, 0.6, 0.7, 0.8, 0.9]
-    parameters_gbr = [{'n_estimators': [700], 'max_depth': [2], 'alpha': [0.6]}]
-    gs_gbr = GridSearchCV(estimator=GradientBoostingRegressor(learning_rate=0.1, loss='huber'), param_grid=parameters_gbr,
-                          scoring='neg_mean_squared_error', cv=3, n_jobs=-1)
-    gs_gbr.fit(x_train, y)
-    list_score.append(np.sqrt(-gs_gbr.best_score_))
-    list_para.append(gs_gbr.best_params_)
+    kr_range_d = [2, 3, 4, 5]
+    kr_range_a = [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12]
+    kr_range_c = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5]
+    parameters_kr = [{'alpha': [0.1], 'degree': kr_range_d, 'coef0': kr_range_c}]
+    gs_kr = GridSearchCV(estimator=KernelRidge(kernel='polynomial'), param_grid=parameters_kr, scoring='neg_mean_squared_error',
+                          cv=5,
+                          n_jobs=-1)
+    gs_kr.fit(x_train, y)
+    list_score.append(np.sqrt(-gs_kr.best_score_))
+    list_para.append(gs_kr.best_params_)
+    # ridge_range = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    # parameters_ridge = [{'alpha': [12]}]
+    # gs_ridge = GridSearchCV(estimator=Ridge(), param_grid=parameters_ridge, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_ridge.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_ridge.best_score_))
+    # list_para.append(gs_ridge.best_params_)
+    #
+    # adb_range = range(2, 20, 1)
+    # parameters_ridge = [{'n_estimators': [14], 'base_estimator__alpha': [9]}]
+    # adbrg = BaggingRegressor(Ridge(), random_state=0)
+    # gs_ridge = GridSearchCV(estimator=adbrg, param_grid=parameters_ridge, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_ridge.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_ridge.best_score_))
+    # list_para.append(gs_ridge.best_params_)
+    #
+    # lasso_range = [0.0001, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007, 0.0008]
+    # parameters_lasso = [{'alpha': [0.0005]}]
+    # gs_lasso = GridSearchCV(estimator=Lasso(), param_grid=parameters_lasso, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_lasso.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_lasso.best_score_))
+    # list_para.append(gs_lasso.best_params_)
+    #
+    # elastic_range_1 = [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.01]
+    # elastic_range_2 = [0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2]
+    # parameters_elastic = [{'alpha': elastic_range_1, 'l1_ratio':elastic_range_2}]
+    # gs_elastic = GridSearchCV(estimator=ElasticNet(), param_grid=parameters_elastic, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_elastic.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_elastic.best_score_))
+    # list_para.append(gs_elastic.best_params_)
+    #
+    # xgb_range_n = [200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
+    # xgb_range_d = [2, 3]
+    # xgb_range_l = [0.00001, 0.00004, 0.00005, 0.00006, 0.00007, 0.00008, 0.0001, 0.0005, 0.0006, 0.0007, 0.0008, 0.0009, 0.001, 0.005]
+    # # parameters_xgb = [{'n_estimators': xgb_range_n, 'max_depth': xgb_range_d, 'gamma': xgb_range_l, 'reg_alpha': xgb_range_l, 'reg_lambda': xgb_range_l}]
+    # parameters_xgb = [{'n_estimators': [600], 'max_depth': [2], 'gamma': xgb_range_l}]
+    # gs_xgb = GridSearchCV(estimator=xgb.XGBRegressor(learning_rate=0.1, silent=1), param_grid=parameters_xgb, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_xgb.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_xgb.best_score_))
+    # list_para.append(gs_xgb.best_params_)
+    #
+    # gbr_range_n = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
+    # gbr_range_d = [2, 3]
+    # gbr_range_a = [0.5, 0.6, 0.7, 0.8, 0.9]
+    # parameters_gbr = [{'n_estimators': [300], 'max_depth': [2], 'alpha': gbr_range_a}]
+    # gs_gbr = GridSearchCV(estimator=GradientBoostingRegressor(learning_rate=0.1, loss='huber'), param_grid=parameters_gbr,
+    #                       scoring='neg_mean_squared_error', cv=5, n_jobs=-1)
+    # gs_gbr.fit(x_train, y)
+    # list_score.append(np.sqrt(-gs_gbr.best_score_))
+    # list_para.append(gs_gbr.best_params_)
 
     score_df[str(i) + 'score'] = list_score
     score_df[str(i) + 'para'] = list_para
